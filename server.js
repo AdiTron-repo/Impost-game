@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
 // Android needs this file to link the Play Store app to this site (Digital Asset Links).
 app.get("/.well-known/assetlinks.json", (req, res) => {
   res.type("application/json").sendFile(path.join(__dirname, "public", "assetlinks.json"), (err) => {
@@ -25,6 +26,7 @@ const WORDS = {
   Event: ["wedding", "festival", "birthday", "concert", "exam", "picnic"],
 };
 const MIN = 3, MAX = 5, ROUNDS = 2;
+const HOLD_MS = 90 * 1000; // how long a disconnected player keeps their seat
 const rooms = {};
 
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -39,13 +41,15 @@ function newCode() {
   return c;
 }
 
+// Players are identified by a stable id (pid) kept on their device, not by the socket,
+// so a player can reconnect on a new socket and get their seat back.
 function send(room) {
   const n = room.order.length || 1;
   const base = {
     code: room.code,
     phase: room.phase,
     hostId: room.hostId,
-    players: room.players.map((p) => ({ id: p.id, name: p.name, voted: p.id in room.votes })),
+    players: room.players.map((p) => ({ id: p.id, name: p.name, online: p.online, voted: p.id in room.votes })),
     turn: room.phase === "clues" ? room.order[room.t % n] : null,
     round: Math.min(Math.floor(room.t / n) + 1, ROUNDS),
     rounds: ROUNDS,
@@ -55,7 +59,8 @@ function send(room) {
   };
   const playing = room.phase !== "lobby";
   for (const p of room.players) {
-    io.to(p.id).emit("state", {
+    if (!p.sid) continue;
+    io.to(p.sid).emit("state", {
       ...base,
       you: {
         id: p.id,
@@ -70,7 +75,18 @@ function send(room) {
 function backToLobby(room, notice) {
   Object.assign(room, { phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null });
   send(room);
-  if (notice) room.players.forEach((p) => io.to(p.id).emit("notice", notice));
+  if (notice) room.players.forEach((p) => p.sid && io.to(p.sid).emit("notice", notice));
+}
+
+function removePlayer(room, pid) {
+  const left = room.players.find((p) => p.id === pid);
+  if (!left) return;
+  clearTimeout(left.timer);
+  room.players = room.players.filter((p) => p.id !== pid);
+  if (!room.players.length) return void delete rooms[room.code];
+  if (room.hostId === pid) room.hostId = (room.players.find((p) => p.online) || room.players[0]).id;
+  if (room.phase === "lobby") send(room);
+  else backToLobby(room, `${left.name} left, so the game was reset.`);
 }
 
 function finishVoting(room) {
@@ -93,37 +109,58 @@ function finishVoting(room) {
 
 io.on("connection", (socket) => {
   const myRoom = () => rooms[socket.data.room];
+  const me = () => (myRoom() ? myRoom().players.find((p) => p.id === socket.data.pid) : null);
 
-  function enter(room, name) {
-    room.players.push({ id: socket.id, name });
+  function bind(room, player) {
+    clearTimeout(player.timer);
+    player.sid = socket.id;
+    player.online = true;
     socket.data.room = room.code;
+    socket.data.pid = player.id;
     send(room);
   }
 
-  socket.on("create", ({ name }, cb) => {
-    name = clean(name, 12);
-    if (!name) return cb({ error: "Enter a name first." });
+  function enter(room, name, pid) {
+    const player = { id: pid, name, sid: null, online: true, timer: null };
+    room.players.push(player);
+    bind(room, player);
+  }
+
+  socket.on("create", ({ name, token }, cb) => {
+    name = clean(name, 12); const pid = clean(token, 60);
+    if (!name || !pid) return cb({ error: "Enter a name first." });
     const code = newCode();
-    rooms[code] = { code, hostId: socket.id, players: [], phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null };
-    enter(rooms[code], name);
+    rooms[code] = { code, hostId: pid, players: [], phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null };
+    enter(rooms[code], name, pid);
     cb({});
   });
 
-  socket.on("join", ({ name, code }, cb) => {
-    name = clean(name, 12);
+  socket.on("join", ({ name, code, token }, cb) => {
+    name = clean(name, 12); const pid = clean(token, 60);
     const room = rooms[clean(code, 4).toUpperCase()];
-    if (!name) return cb({ error: "Enter a name first." });
+    if (!name || !pid) return cb({ error: "Enter a name first." });
     if (!room) return cb({ error: "No room with that code." });
+    const existing = room.players.find((p) => p.id === pid);
+    if (existing) { bind(room, existing); return cb({}); }
     if (room.phase !== "lobby") return cb({ error: "That game has already started." });
     if (room.players.length >= MAX) return cb({ error: "That room is full." });
     if (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return cb({ error: "That name is taken in this room." });
-    enter(room, name);
+    enter(room, name, pid);
+    cb({});
+  });
+
+  // Called by the app after a dropped connection (phone slept, app switched, network change).
+  socket.on("resume", ({ code, token }, cb) => {
+    const room = rooms[clean(code, 4).toUpperCase()];
+    const player = room && room.players.find((p) => p.id === clean(token, 60));
+    if (!player) return cb({ error: "Room expired." });
+    bind(room, player);
     cb({});
   });
 
   socket.on("start", () => {
     const room = myRoom();
-    if (!room || room.hostId !== socket.id || room.phase !== "lobby" || room.players.length < MIN) return;
+    if (!room || room.hostId !== socket.data.pid || room.phase !== "lobby" || room.players.length < MIN) return;
     room.category = pick(Object.keys(WORDS));
     room.word = pick(WORDS[room.category]);
     room.imposter = pick(room.players).id;
@@ -133,40 +170,44 @@ io.on("connection", (socket) => {
   });
 
   socket.on("clue", (text) => {
-    const room = myRoom();
+    const room = myRoom(), player = me();
     text = clean(text, 40);
-    if (!room || room.phase !== "clues" || !text) return;
-    if (room.order[room.t % room.order.length] !== socket.id) return;
-    const me = room.players.find((p) => p.id === socket.id);
-    room.clues.push({ name: me.name, text, round: Math.floor(room.t / room.order.length) + 1 });
+    if (!room || !player || room.phase !== "clues" || !text) return;
+    if (room.order[room.t % room.order.length] !== player.id) return;
+    room.clues.push({ name: player.name, text, round: Math.floor(room.t / room.order.length) + 1 });
     room.t++;
     if (room.t >= room.order.length * ROUNDS) room.phase = "voting";
     send(room);
   });
 
   socket.on("vote", (targetId) => {
-    const room = myRoom();
-    if (!room || room.phase !== "voting" || targetId === socket.id) return;
+    const room = myRoom(), player = me();
+    if (!room || !player || room.phase !== "voting" || targetId === player.id) return;
     if (!room.players.some((p) => p.id === targetId)) return;
-    room.votes[socket.id] = targetId;
+    room.votes[player.id] = targetId;
     if (Object.keys(room.votes).length === room.players.length) finishVoting(room);
     send(room);
   });
 
   socket.on("again", () => {
     const room = myRoom();
-    if (room && room.hostId === socket.id && room.phase === "result") backToLobby(room);
+    if (room && room.hostId === socket.data.pid && room.phase === "result") backToLobby(room);
+  });
+
+  socket.on("leave", () => {
+    const room = myRoom(), player = me();
+    if (!room || !player) return;
+    socket.data.room = null;
+    removePlayer(room, player.id);
   });
 
   socket.on("disconnect", () => {
-    const room = myRoom();
-    if (!room) return;
-    const left = room.players.find((p) => p.id === socket.id);
-    room.players = room.players.filter((p) => p.id !== socket.id);
-    if (!room.players.length) return void delete rooms[room.code];
-    if (room.hostId === socket.id) room.hostId = room.players[0].id;
-    if (room.phase === "lobby") send(room);
-    else backToLobby(room, `${left.name} left, so the game was reset.`);
+    const room = myRoom(), player = me();
+    if (!room || !player || player.sid !== socket.id) return; // a newer connection already took over
+    player.sid = null;
+    player.online = false;
+    player.timer = setTimeout(() => removePlayer(room, player.id), HOLD_MS);
+    send(room);
   });
 });
 
