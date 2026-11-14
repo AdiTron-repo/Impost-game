@@ -61,9 +61,48 @@ button:disabled{opacity:.45;cursor:not-allowed}
 #chatlist b{color:var(--signal);margin-right:.4rem}
 #chatlist .me b{color:var(--ok)}
 #chatlist .empty{color:var(--muted)}
+
+/* ---- look and motion ---- */
+.bg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;
+  background:radial-gradient(60rem 40rem at 15% -10%,#1E5A58 0%,transparent 60%),
+             radial-gradient(50rem 36rem at 100% 100%,#3A3470 0%,transparent 55%),var(--ink)}
+.bg i{position:absolute;bottom:-3rem;font-style:normal;font-weight:800;color:var(--signal);opacity:0;user-select:none}
+h1{background:linear-gradient(100deg,var(--paper) 40%,var(--signal));-webkit-background-clip:text;background-clip:text;color:transparent}
+button{transition:transform .12s,filter .12s}
+button:active:not(:disabled){transform:scale(.97)}
+.secret{box-shadow:0 .6rem 1.6rem rgba(0,0,0,.35)}
+.secret.imp{box-shadow:0 0 2rem rgba(255,90,95,.45)}
+.status.yourturn{color:var(--signal)}
+.confetti{position:fixed;top:-1rem;width:.6rem;height:1rem;z-index:20;pointer-events:none;border-radius:2px}
+@media (prefers-reduced-motion:no-preference){
+  .bg i{animation:floaty linear infinite}
+  @keyframes floaty{0%{transform:translateY(0) rotate(0);opacity:0}10%{opacity:.14}90%{opacity:.14}100%{transform:translateY(-110vh) rotate(40deg);opacity:0}}
+  .view:not([hidden]){animation:rise .45s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .list li.new,#chatlist li.new{animation:slidein .35s ease both}
+  @keyframes slidein{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+  .secret.pop{animation:flip .4s ease}
+  @keyframes flip{from{transform:perspective(600px) rotateY(90deg)}to{transform:perspective(600px) rotateY(0)}}
+  .secret.hidden{animation:breathe 2.6s ease-in-out infinite}
+  .secret.hidden.pop{animation:flip .4s ease}
+  @keyframes breathe{50%{border-color:var(--signal)}}
+  .status.yourturn{animation:glow 1.4s ease-in-out infinite}
+  @keyframes glow{50%{text-shadow:0 0 .9rem rgba(255,201,60,.8)}}
+  .votes button{animation:rise .35s ease both}
+  .votes button:nth-child(2){animation-delay:.06s}.votes button:nth-child(3){animation-delay:.12s}.votes button:nth-child(4){animation-delay:.18s}
+  button:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.06)}
+  .win{animation:pop .6s cubic-bezier(.2,1.6,.4,1) both}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+  .win.imposter{animation:pop .6s cubic-bezier(.2,1.6,.4,1) both,shake .5s .6s}
+  @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+  .confetti{animation:fall 1.8s ease-in forwards}
+  @keyframes fall{to{transform:translate(var(--dx),105vh) rotate(var(--rot));opacity:.9}}
+}
+@media (prefers-reduced-motion:reduce){.bg i{display:none}}
 </style>
 </head>
 <body>
+<div class="bg" id="bg" aria-hidden="true"></div>
 <main>
   <section id="home" class="view">
     <h1>Who’s the imposter?</h1>
@@ -166,7 +205,38 @@ function leaveRoom(){
 }
 $("leave1").onclick = leaveRoom;
 $("leave2").onclick = leaveRoom;
-$("secret").onclick = () => { revealed = !revealed; render(); };
+$("secret").onclick = () => {
+  revealed = !revealed; render();
+  const b = $("secret"); b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop");
+};
+(function floaters(){
+  const bg = $("bg"), marks = ["?", "?", "!", "?", "…"];
+  for (let i = 0; i < 9; i++){
+    const f = document.createElement("i");
+    f.textContent = marks[i % marks.length];
+    f.style.left = Math.round(Math.random() * 94) + "%";
+    f.style.fontSize = (2 + Math.random() * 3) + "rem";
+    f.style.animationDuration = (14 + Math.random() * 14) + "s";
+    f.style.animationDelay = (-Math.random() * 20) + "s";
+    bg.append(f);
+  }
+})();
+let celebrated = false, seenClues = 0, seenChat = 0;
+function celebrate(winner){
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const colors = winner === "crew" ? ["#5BD6A0", "#FFC93C", "#F2F5F0"] : ["#FF5A5F", "#FFC93C", "#F2F5F0"];
+  for (let i = 0; i < 45; i++){
+    const d = document.createElement("div");
+    d.className = "confetti";
+    d.style.left = Math.random() * 100 + "vw";
+    d.style.background = colors[i % colors.length];
+    d.style.setProperty("--dx", (Math.random() * 120 - 60) + "px");
+    d.style.setProperty("--rot", (Math.random() * 720) + "deg");
+    d.style.animationDelay = (Math.random() * 0.4) + "s";
+    document.body.append(d);
+    setTimeout(() => d.remove(), 2600);
+  }
+}
 $("clueform").onsubmit = (e) => {
   e.preventDefault();
   const v = $("clue").value.trim();
@@ -185,11 +255,12 @@ document.addEventListener("visibilitychange", () => {
 function render(){
   $("chat").hidden = !S;
   if (S) renderChat();
-  if (!S) return show("home");
+  if (!S){ celebrated = false; seenClues = 0; seenChat = 0; return show("home"); }
   $("code1").textContent = $("code2").textContent = S.code;
   if (S.phase === "lobby") return renderLobby();
   show("game");
   renderSecret();
+  $("status").classList.toggle("yourturn", S.phase === "clues" && S.turn === S.you.id);
   $("clueform").hidden = !(S.phase === "clues" && S.turn === S.you.id);
   $("votes").hidden = !(S.phase === "voting");
   $("result").hidden = S.phase !== "result";
@@ -213,11 +284,12 @@ function render(){
   if (off.length && S.phase !== "result") $("substatus").textContent += " Waiting for " + off.join(", ") + " to reconnect.";
 
   const ul = $("clues"); ul.replaceChildren();
-  S.clues.forEach(c => {
-    const li = el("li", null, "clue");
+  S.clues.forEach((c, i) => {
+    const li = el("li", null, "clue" + (i >= seenClues ? " new" : ""));
     li.append(el("b", c.name), el("span", c.text));
     ul.append(li);
   });
+  seenClues = S.clues.length;
 }
 
 function renderChat(){
@@ -225,11 +297,12 @@ function renderChat(){
   const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
   box.replaceChildren();
   if (!S.chat.length) box.append(el("li", "No messages yet.", "empty"));
-  S.chat.forEach(m => {
-    const li = el("li", null, m.name === nameOf(S.you.id) ? "me" : "");
+  S.chat.forEach((m, idx) => {
+    const li = el("li", null, (m.name === nameOf(S.you.id) ? "me" : "") + (idx >= seenChat ? " new" : ""));
     li.append(el("b", m.name), el("span", m.text));
     box.append(li);
   });
+  seenChat = S.chat.length;
   if (stick) box.scrollTop = box.scrollHeight;
 }
 $("chatform").onsubmit = (e) => {
@@ -239,7 +312,7 @@ $("chatform").onsubmit = (e) => {
 };
 
 function renderLobby(){
-  revealed = false;
+  revealed = false; celebrated = false; seenClues = 0;
   show("lobby");
   const ul = $("plist"); ul.replaceChildren();
   S.players.forEach(p => {
@@ -282,6 +355,7 @@ function renderVotes(voted){
 
 function renderResult(){
   const r = S.result, box = $("result"); box.replaceChildren();
+  if (!celebrated){ celebrated = true; celebrate(r.winner); }
   $("status").textContent = ""; $("substatus").textContent = "";
   box.append(el("div", r.winner === "crew" ? "The crew wins" : "The imposter wins", "win " + r.winner));
   box.append(el("p", (r.votedOut ? r.votedOut + " was voted out. " : "The vote was tied, so nobody was voted out. ") +
