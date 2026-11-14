@@ -52,6 +52,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .win.crew{color:var(--ok)}.win.imposter{color:var(--alert)}
 #toast{position:fixed;left:1rem;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0));max-width:28rem;margin:0 auto;
   background:var(--paper);color:var(--ink);padding:.8rem 1rem;border-radius:.6rem;font-weight:700}
+.small{width:auto;margin:0;padding:.4rem .9rem;font-size:.9rem}
+.banner{position:fixed;top:env(safe-area-inset-top,0);left:0;right:0;background:var(--signal);color:var(--ink);text-align:center;font-weight:700;padding:.4rem}
 @media (prefers-reduced-motion:no-preference){.secret{transition:background .2s,color .2s}}
 </style>
 </head>
@@ -71,7 +73,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
   </section>
 
   <section id="lobby" class="view" hidden>
-    <div class="top"><span>Room code</span><span class="code" id="code1"></span></div>
+    <div class="top"><span>Room code</span><span class="code" id="code1"></span><button id="leave1" class="alt small">Leave</button></div>
     <h2>Players</h2>
     <ul class="list" id="plist"></ul>
     <p id="lobbyhint"></p>
@@ -79,7 +81,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
   </section>
 
   <section id="game" class="view" hidden>
-    <div class="top"><span>Room</span><span class="code" id="code2"></span></div>
+    <div class="top"><span>Room</span><span class="code" id="code2"></span><button id="leave2" class="alt small">Leave</button></div>
     <button id="secret" class="secret hidden" aria-live="polite"></button>
     <div class="status" id="status"></div>
     <p id="substatus"></p>
@@ -94,10 +96,35 @@ button:disabled{opacity:.45;cursor:not-allowed}
   </section>
 </main>
 <div id="toast" role="status" hidden></div>
+<div id="conn" class="banner" role="status" hidden>Reconnecting…</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
+function getToken(){
+  let t = null;
+  try { t = localStorage.getItem("imp_token"); } catch (e) {}
+  if (!t){
+    const a = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+    else for (let i = 0; i < 16; i++) a[i] = Math.floor(Math.random() * 256);
+    t = Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+    try { localStorage.setItem("imp_token", t); } catch (e) {}
+  }
+  return t;
+}
+const TOKEN = getToken();
+function saveRoom(code){
+  try { code ? localStorage.setItem("imp_room", code) : localStorage.removeItem("imp_room"); } catch (e) {}
+}
+function savedRoom(){ try { return localStorage.getItem("imp_room"); } catch (e) { return null; } }
+function resume(){
+  const code = savedRoom();
+  if (!code) return;
+  socket.emit("resume", { token: TOKEN, code }, (r) => {
+    if (r && r.error){ S = null; revealed = false; saveRoom(null); render(); }
+  });
+}
 const $ = (id) => document.getElementById(id);
 let S = null, revealed = false, toastTimer;
 
@@ -115,9 +142,16 @@ function el(tag, text, cls){
 function nameOf(id){ const p = S.players.find(p => p.id === id); return p ? p.name : ""; }
 const done = (r) => { if (r && r.error) toast(r.error); };
 
-$("create").onclick = () => socket.emit("create", { name: $("name").value }, done);
-$("join").onclick = () => socket.emit("join", { name: $("name").value, code: $("joincode").value }, done);
+$("create").onclick = () => socket.emit("create", { name: $("name").value, token: TOKEN }, done);
+$("join").onclick = () => socket.emit("join", { name: $("name").value, code: $("joincode").value, token: TOKEN }, done);
 $("start").onclick = () => socket.emit("start");
+function leaveRoom(){
+  if (!confirm("Leave this room?")) return;
+  socket.emit("leave");
+  S = null; revealed = false; saveRoom(null); render();
+}
+$("leave1").onclick = leaveRoom;
+$("leave2").onclick = leaveRoom;
 $("secret").onclick = () => { revealed = !revealed; render(); };
 $("clueform").onsubmit = (e) => {
   e.preventDefault();
@@ -125,9 +159,14 @@ $("clueform").onsubmit = (e) => {
   if (v) { socket.emit("clue", v); $("clue").value = ""; }
 };
 
-socket.on("state", (s) => { S = s; render(); });
+socket.on("state", (s) => { S = s; saveRoom(s.code); render(); });
 socket.on("notice", toast);
-socket.on("disconnect", () => { S = null; revealed = false; render(); toast("Connection lost. Create or join a room again."); });
+socket.on("connect", () => { $("conn").hidden = true; resume(); });
+socket.on("disconnect", () => { $("conn").hidden = false; });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (socket.connected) resume(); else socket.connect();
+});
 
 function render(){
   if (!S) return show("home");
@@ -154,6 +193,9 @@ function render(){
     renderResult();
   }
 
+  const off = S.players.filter(p => !p.online).map(p => p.name);
+  if (off.length && S.phase !== "result") $("substatus").textContent += " Waiting for " + off.join(", ") + " to reconnect.";
+
   const ul = $("clues"); ul.replaceChildren();
   S.clues.forEach(c => {
     const li = el("li", null, "clue");
@@ -168,14 +210,15 @@ function renderLobby(){
   const ul = $("plist"); ul.replaceChildren();
   S.players.forEach(p => {
     const li = el("li", p.name);
-    if (p.id === S.hostId) li.append(el("span", "host", "tag"));
+    if (!p.online) li.append(el("span", "reconnecting…", "tag"));
+    else if (p.id === S.hostId) li.append(el("span", "host", "tag"));
     ul.append(li);
   });
-  const host = S.you.id === S.hostId, enough = S.players.length >= S.min;
+  const host = S.you.id === S.hostId, enough = S.players.length >= S.min, allOnline = S.players.every(p => p.online);
   $("start").hidden = !host;
-  $("start").disabled = !enough;
+  $("start").disabled = !enough || !allOnline;
   $("lobbyhint").textContent = host
-    ? (enough ? "Everyone in? Start when ready." : "Waiting for at least " + S.min + " players. Share the room code.")
+    ? (enough ? (allOnline ? "Everyone in? Start when ready." : "Waiting for a player to reconnect.") : "Waiting for at least " + S.min + " players. Share the room code.")
     : "Waiting for the host to start. Share the room code with friends.";
 }
 
