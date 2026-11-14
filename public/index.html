@@ -55,6 +55,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .small{width:auto;margin:0;padding:.4rem .9rem;font-size:.9rem}
 .banner{position:fixed;top:env(safe-area-inset-top,0);left:0;right:0;background:var(--signal);color:var(--ink);text-align:center;font-weight:700;padding:.4rem}
 @media (prefers-reduced-motion:no-preference){.secret{transition:background .2s,color .2s}}
+#chat{margin-top:2rem}
+#chatlist{max-height:13rem;overflow-y:auto;border:2px solid var(--line);border-radius:.6rem;padding:.25rem .8rem;background:var(--panel);margin-bottom:.75rem}
+#chatlist li{display:block;border:0;padding:.35rem 0;overflow-wrap:anywhere}
+#chatlist b{color:var(--signal);margin-right:.4rem}
+#chatlist .me b{color:var(--ok)}
+#chatlist .empty{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -93,6 +99,14 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <div id="result" hidden></div>
     <h2 id="clueshead">Clues</h2>
     <ul class="list" id="clues"></ul>
+  </section>
+  <section id="chat" hidden>
+    <h2>Chat</h2>
+    <ul class="list" id="chatlist" aria-live="polite"></ul>
+    <form id="chatform" class="row">
+      <input id="chatmsg" maxlength="200" autocomplete="off" placeholder="Say something…" aria-label="Chat message">
+      <button type="submit">Send</button>
+    </form>
   </section>
 </main>
 <div id="toast" role="status" hidden></div>
@@ -169,6 +183,8 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function render(){
+  $("chat").hidden = !S;
+  if (S) renderChat();
   if (!S) return show("home");
   $("code1").textContent = $("code2").textContent = S.code;
   if (S.phase === "lobby") return renderLobby();
@@ -203,6 +219,24 @@ function render(){
     ul.append(li);
   });
 }
+
+function renderChat(){
+  const box = $("chatlist");
+  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  box.replaceChildren();
+  if (!S.chat.length) box.append(el("li", "No messages yet.", "empty"));
+  S.chat.forEach(m => {
+    const li = el("li", null, m.name === nameOf(S.you.id) ? "me" : "");
+    li.append(el("b", m.name), el("span", m.text));
+    box.append(li);
+  });
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+$("chatform").onsubmit = (e) => {
+  e.preventDefault();
+  const v = $("chatmsg").value.trim();
+  if (v) { socket.emit("chat", v); $("chatmsg").value = ""; }
+};
 
 function renderLobby(){
   revealed = false;
