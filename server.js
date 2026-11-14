@@ -7,12 +7,16 @@ const server = http.createServer(app);
 const io = new Server(server);
 app.use(express.static("public"));
 
-const WORDS = [
-  "pizza", "elephant", "guitar", "volcano", "library", "umbrella", "submarine",
-  "cricket", "monsoon", "airport", "chocolate", "mirror", "bicycle", "castle",
-  "desert", "football", "hospital", "rainbow", "telescope", "wedding",
-  "backpack", "festival", "lighthouse", "microphone", "sandwich", "tiger"
-];
+const WORDS = {
+  Food: ["pizza", "chocolate", "sandwich", "biryani", "mango", "noodles"],
+  Animal: ["elephant", "tiger", "peacock", "dolphin", "camel", "penguin"],
+  Place: ["library", "airport", "castle", "hospital", "lighthouse", "stadium"],
+  Object: ["guitar", "umbrella", "mirror", "telescope", "backpack", "microphone"],
+  Vehicle: ["submarine", "bicycle", "helicopter", "train", "tractor", "rocket"],
+  Nature: ["volcano", "monsoon", "desert", "rainbow", "waterfall", "glacier"],
+  Sport: ["cricket", "football", "badminton", "chess", "swimming", "kabaddi"],
+  Event: ["wedding", "festival", "birthday", "concert", "exam", "picnic"],
+};
 const MIN = 3, MAX = 5, ROUNDS = 2;
 const rooms = {};
 
@@ -50,6 +54,7 @@ function send(room) {
         id: p.id,
         imposter: playing && p.id === room.imposter,
         word: playing && p.id !== room.imposter ? room.word : null,
+        hint: playing && p.id === room.imposter ? room.category : null,
       },
     });
   }
@@ -112,7 +117,8 @@ io.on("connection", (socket) => {
   socket.on("start", () => {
     const room = myRoom();
     if (!room || room.hostId !== socket.id || room.phase !== "lobby" || room.players.length < MIN) return;
-    room.word = pick(WORDS);
+    room.category = pick(Object.keys(WORDS));
+    room.word = pick(WORDS[room.category]);
     room.imposter = pick(room.players).id;
     room.order = shuffle(room.players.map((p) => p.id));
     Object.assign(room, { t: 0, clues: [], votes: {}, result: null, phase: "clues" });
