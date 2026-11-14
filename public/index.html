@@ -187,7 +187,7 @@ function renderSecret(){
     b.append(el("span", "Tap to see your word"), el("small", "Make sure nobody is looking"));
   } else if (S.you.imposter){
     b.classList.add("imp");
-    b.append(el("span", "You’re the imposter"), el("small", "You don’t know the word. Tap to hide."));
+    b.append(el("span", "You’re the imposter"), el("small", "Hint: the word is in the category “" + S.you.hint + "”. Tap to hide."));
   } else {
     b.append(el("span", S.you.word), el("small", "Tap to hide"));
   }
