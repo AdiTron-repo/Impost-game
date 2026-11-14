@@ -1,11 +1,18 @@
 const express = require("express");
+const path = require("path");
 const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-app.use(express.static("public"));
+// Android needs this file to link the Play Store app to this site (Digital Asset Links).
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  res.type("application/json").sendFile(path.join(__dirname, "public", "assetlinks.json"), (err) => {
+    if (err) res.status(404).end();
+  });
+});
+app.use(express.static(path.join(__dirname, "public")));
 
 const WORDS = {
   Food: ["pizza", "chocolate", "sandwich", "biryani", "mango", "noodles"],
