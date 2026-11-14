@@ -1,303 +1,228 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Imposter Word Game</title>
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#0E2A2B">
-<link rel="icon" href="/icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&display=swap" rel="stylesheet">
-<style>
-:root{
-  --ink:#0E2A2B; --panel:#163B3D; --line:#2A5558; --paper:#F2F5F0;
-  --muted:#93B4B1; --signal:#FFC93C; --alert:#FF5A5F; --ok:#5BD6A0;
-  font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%}
-body{background:var(--ink);color:var(--paper);font-size:17px;line-height:1.45;
-  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
-main{max-width:30rem;margin:0 auto;padding:1.25rem 1.25rem 3rem}
-h1{font-size:2.6rem;line-height:1;margin:1.5rem 0 .5rem;font-weight:800;letter-spacing:-.02em}
-h2{font-size:1.15rem;margin:1.75rem 0 .6rem;font-weight:700}
-p{margin:.25rem 0 1rem;color:var(--muted)}
-[hidden]{display:none!important}
-input,button{font:inherit;color:inherit}
-input{width:100%;padding:.8rem 1rem;border-radius:.6rem;border:2px solid var(--line);background:var(--panel);margin-bottom:.75rem}
-input:focus-visible,button:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
-button{cursor:pointer;border:0;border-radius:.6rem;padding:.85rem 1.1rem;font-weight:700;background:var(--signal);color:var(--ink);width:100%;margin-bottom:.6rem}
-button.alt{background:transparent;border:2px solid var(--line);color:var(--paper)}
-button:disabled{opacity:.45;cursor:not-allowed}
-.row{display:flex;gap:.6rem}.row input{margin:0}.row button{width:auto;margin:0}
-.top{display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
-.code{font-weight:800;font-size:1.5rem;letter-spacing:.25em;color:var(--signal)}
-.list{list-style:none;padding:0;margin:0}
-.list li{padding:.65rem 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:1rem}
-.tag{color:var(--muted)}
-.secret{width:100%;min-height:9.5rem;border-radius:1rem;background:var(--paper);color:var(--ink);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
-  padding:1rem;margin:1rem 0;font-weight:800;font-size:2.6rem;line-height:1.05;letter-spacing:-.02em}
-.secret small{font-size:1rem;font-weight:500;color:#4d6b69;margin-top:.5rem;letter-spacing:0}
-.secret.hidden{background:var(--panel);color:var(--paper);border:2px dashed var(--line);font-size:1.5rem}
-.secret.hidden small{color:var(--muted)}
-.secret.imp{background:var(--alert);color:#fff}
-.secret.imp small{color:#ffe3e3}
-.status{font-weight:700;font-size:1.25rem;margin:1rem 0 .25rem}
-.clue b{color:var(--signal)}
-.votes button{text-align:left}
-.win{font-size:2rem;font-weight:800;line-height:1.1;margin:1rem 0 .5rem}
-.win.crew{color:var(--ok)}.win.imposter{color:var(--alert)}
-#toast{position:fixed;left:1rem;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0));max-width:28rem;margin:0 auto;
-  background:var(--paper);color:var(--ink);padding:.8rem 1rem;border-radius:.6rem;font-weight:700}
-.small{width:auto;margin:0;padding:.4rem .9rem;font-size:.9rem}
-.banner{position:fixed;top:env(safe-area-inset-top,0);left:0;right:0;background:var(--signal);color:var(--ink);text-align:center;font-weight:700;padding:.4rem}
-@media (prefers-reduced-motion:no-preference){.secret{transition:background .2s,color .2s}}
-#chat{margin-top:2rem}
-#chatlist{max-height:13rem;overflow-y:auto;border:2px solid var(--line);border-radius:.6rem;padding:.25rem .8rem;background:var(--panel);margin-bottom:.75rem}
-#chatlist li{display:block;border:0;padding:.35rem 0;overflow-wrap:anywhere}
-#chatlist b{color:var(--signal);margin-right:.4rem}
-#chatlist .me b{color:var(--ok)}
-#chatlist .empty{color:var(--muted)}
-</style>
-</head>
-<body>
-<main>
-  <section id="home" class="view">
-    <h1>Who’s the imposter?</h1>
-    <p>Everyone gets the same secret word, except one player. Give clues, then vote.</p>
-    <label for="name" class="tag">Your name</label>
-    <input id="name" maxlength="12" autocomplete="off" placeholder="Up to 12 letters">
-    <button id="create">Create a room</button>
-    <h2>Or join a friend</h2>
-    <div class="row">
-      <input id="joincode" maxlength="4" autocomplete="off" placeholder="Room code" aria-label="Room code">
-      <button id="join" class="alt">Join</button>
-    </div>
-  </section>
+const express = require("express");
+const path = require("path");
+const http = require("http");
+const { Server } = require("socket.io");
 
-  <section id="lobby" class="view" hidden>
-    <div class="top"><span>Room code</span><span class="code" id="code1"></span><button id="leave1" class="alt small">Leave</button></div>
-    <h2>Players</h2>
-    <ul class="list" id="plist"></ul>
-    <p id="lobbyhint"></p>
-    <button id="start">Start game</button>
-  </section>
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-  <section id="game" class="view" hidden>
-    <div class="top"><span>Room</span><span class="code" id="code2"></span><button id="leave2" class="alt small">Leave</button></div>
-    <button id="secret" class="secret hidden" aria-live="polite"></button>
-    <div class="status" id="status"></div>
-    <p id="substatus"></p>
-    <form id="clueform" hidden>
-      <input id="clue" maxlength="40" autocomplete="off" placeholder="Your clue (short!)" aria-label="Your clue">
-      <button type="submit">Send clue</button>
-    </form>
-    <div id="votes" class="votes" hidden></div>
-    <div id="result" hidden></div>
-    <h2 id="clueshead">Clues</h2>
-    <ul class="list" id="clues"></ul>
-  </section>
-  <section id="chat" hidden>
-    <h2>Chat</h2>
-    <ul class="list" id="chatlist" aria-live="polite"></ul>
-    <form id="chatform" class="row">
-      <input id="chatmsg" maxlength="200" autocomplete="off" placeholder="Say something…" aria-label="Chat message">
-      <button type="submit">Send</button>
-    </form>
-  </section>
-</main>
-<div id="toast" role="status" hidden></div>
-<div id="conn" class="banner" role="status" hidden>Reconnecting…</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script>
-const socket = io();
-function getToken(){
-  let t = null;
-  try { t = localStorage.getItem("imp_token"); } catch (e) {}
-  if (!t){
-    const a = new Uint8Array(16);
-    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
-    else for (let i = 0; i < 16; i++) a[i] = Math.floor(Math.random() * 256);
-    t = Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
-    try { localStorage.setItem("imp_token", t); } catch (e) {}
-  }
-  return t;
-}
-const TOKEN = getToken();
-function saveRoom(code){
-  try { code ? localStorage.setItem("imp_room", code) : localStorage.removeItem("imp_room"); } catch (e) {}
-}
-function savedRoom(){ try { return localStorage.getItem("imp_room"); } catch (e) { return null; } }
-function resume(){
-  const code = savedRoom();
-  if (!code) return;
-  socket.emit("resume", { token: TOKEN, code }, (r) => {
-    if (r && r.error){ S = null; revealed = false; saveRoom(null); render(); }
+// Android needs this file to link the Play Store app to this site (Digital Asset Links).
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  res.type("application/json").sendFile(path.join(__dirname, "public", "assetlinks.json"), (err) => {
+    if (err) res.status(404).end();
   });
-}
-const $ = (id) => document.getElementById(id);
-let S = null, revealed = false, toastTimer;
+});
+app.use(express.static(path.join(__dirname, "public")));
 
-function show(id){ document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== id); }
-function toast(msg){
-  const t = $("toast"); t.textContent = msg; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3500);
-}
-function el(tag, text, cls){
-  const e = document.createElement(tag);
-  if (text != null) e.textContent = text;
-  if (cls) e.className = cls;
-  return e;
-}
-function nameOf(id){ const p = S.players.find(p => p.id === id); return p ? p.name : ""; }
-const done = (r) => { if (r && r.error) toast(r.error); };
-
-$("create").onclick = () => socket.emit("create", { name: $("name").value, token: TOKEN }, done);
-$("join").onclick = () => socket.emit("join", { name: $("name").value, code: $("joincode").value, token: TOKEN }, done);
-$("start").onclick = () => socket.emit("start");
-function leaveRoom(){
-  if (!confirm("Leave this room?")) return;
-  socket.emit("leave");
-  S = null; revealed = false; saveRoom(null); render();
-}
-$("leave1").onclick = leaveRoom;
-$("leave2").onclick = leaveRoom;
-$("secret").onclick = () => { revealed = !revealed; render(); };
-$("clueform").onsubmit = (e) => {
-  e.preventDefault();
-  const v = $("clue").value.trim();
-  if (v) { socket.emit("clue", v); $("clue").value = ""; }
+const WORDS = {
+  Food: ["pizza", "chocolate", "sandwich", "biryani", "mango", "noodles"],
+  Animal: ["elephant", "tiger", "peacock", "dolphin", "camel", "penguin"],
+  Place: ["library", "airport", "castle", "hospital", "lighthouse", "stadium"],
+  Object: ["guitar", "umbrella", "mirror", "telescope", "backpack", "microphone"],
+  Vehicle: ["submarine", "bicycle", "helicopter", "train", "tractor", "rocket"],
+  Nature: ["volcano", "monsoon", "desert", "rainbow", "waterfall", "glacier"],
+  Sport: ["cricket", "football", "badminton", "chess", "swimming", "kabaddi"],
+  Event: ["wedding", "festival", "birthday", "concert", "exam", "picnic"],
 };
+const MIN = 3, MAX = 5, ROUNDS = 2;
+const HOLD_MS = 90 * 1000; // how long a disconnected player keeps their seat
+const rooms = {};
 
-socket.on("state", (s) => { S = s; saveRoom(s.code); render(); });
-socket.on("notice", toast);
-socket.on("connect", () => { $("conn").hidden = true; resume(); });
-socket.on("disconnect", () => { $("conn").hidden = false; });
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible") return;
-  if (socket.connected) resume(); else socket.connect();
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
+const clean = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
+
+function newCode() {
+  let c;
+  do {
+    c = Array.from({ length: 4 }, () => pick([..."ABCDEFGHJKLMNPQRSTUVWXYZ"])).join("");
+  } while (rooms[c]);
+  return c;
+}
+
+// Players are identified by a stable id (pid) kept on their device, not by the socket,
+// so a player can reconnect on a new socket and get their seat back.
+function send(room) {
+  const n = room.order.length || 1;
+  const base = {
+    code: room.code,
+    phase: room.phase,
+    hostId: room.hostId,
+    players: room.players.map((p) => ({ id: p.id, name: p.name, online: p.online, voted: p.id in room.votes })),
+    turn: room.phase === "clues" ? room.order[room.t % n] : null,
+    round: Math.min(Math.floor(room.t / n) + 1, ROUNDS),
+    rounds: ROUNDS,
+    clues: room.clues,
+    chat: room.chat,
+    result: room.result,
+    min: MIN,
+  };
+  const playing = room.phase !== "lobby";
+  for (const p of room.players) {
+    if (!p.sid) continue;
+    io.to(p.sid).emit("state", {
+      ...base,
+      you: {
+        id: p.id,
+        imposter: playing && p.id === room.imposter,
+        word: playing && p.id !== room.imposter ? room.word : null,
+        hint: playing && p.id === room.imposter ? room.category : null,
+      },
+    });
+  }
+}
+
+function backToLobby(room, notice) {
+  Object.assign(room, { phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null });
+  send(room);
+  if (notice) room.players.forEach((p) => p.sid && io.to(p.sid).emit("notice", notice));
+}
+
+function removePlayer(room, pid) {
+  const left = room.players.find((p) => p.id === pid);
+  if (!left) return;
+  clearTimeout(left.timer);
+  room.players = room.players.filter((p) => p.id !== pid);
+  if (!room.players.length) return void delete rooms[room.code];
+  if (room.hostId === pid) room.hostId = (room.players.find((p) => p.online) || room.players[0]).id;
+  if (room.phase === "lobby") send(room);
+  else backToLobby(room, `${left.name} left, so the game was reset.`);
+}
+
+function finishVoting(room) {
+  const counts = {};
+  room.players.forEach((p) => (counts[p.id] = 0));
+  Object.values(room.votes).forEach((id) => counts[id]++);
+  const top = Math.max(...Object.values(counts));
+  const tops = Object.keys(counts).filter((id) => counts[id] === top);
+  const votedOut = tops.length === 1 ? tops[0] : null; // a tie means nobody is voted out
+  const name = (id) => room.players.find((p) => p.id === id).name;
+  room.result = {
+    winner: votedOut === room.imposter ? "crew" : "imposter",
+    votedOut: votedOut ? name(votedOut) : null,
+    imposter: name(room.imposter),
+    word: room.word,
+    tally: room.players.map((p) => ({ name: p.name, votes: counts[p.id] })),
+  };
+  room.phase = "result";
+}
+
+io.on("connection", (socket) => {
+  const myRoom = () => rooms[socket.data.room];
+  const me = () => (myRoom() ? myRoom().players.find((p) => p.id === socket.data.pid) : null);
+
+  function bind(room, player) {
+    clearTimeout(player.timer);
+    player.sid = socket.id;
+    player.online = true;
+    socket.data.room = room.code;
+    socket.data.pid = player.id;
+    send(room);
+  }
+
+  function enter(room, name, pid) {
+    const player = { id: pid, name, sid: null, online: true, timer: null };
+    room.players.push(player);
+    bind(room, player);
+  }
+
+  socket.on("create", ({ name, token }, cb) => {
+    name = clean(name, 12); const pid = clean(token, 60);
+    if (!name || !pid) return cb({ error: "Enter a name first." });
+    const code = newCode();
+    rooms[code] = { code, hostId: pid, players: [], chat: [], phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null };
+    enter(rooms[code], name, pid);
+    cb({});
+  });
+
+  socket.on("join", ({ name, code, token }, cb) => {
+    name = clean(name, 12); const pid = clean(token, 60);
+    const room = rooms[clean(code, 4).toUpperCase()];
+    if (!name || !pid) return cb({ error: "Enter a name first." });
+    if (!room) return cb({ error: "No room with that code." });
+    const existing = room.players.find((p) => p.id === pid);
+    if (existing) { bind(room, existing); return cb({}); }
+    if (room.phase !== "lobby") return cb({ error: "That game has already started." });
+    if (room.players.length >= MAX) return cb({ error: "That room is full." });
+    if (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return cb({ error: "That name is taken in this room." });
+    enter(room, name, pid);
+    cb({});
+  });
+
+  // Called by the app after a dropped connection (phone slept, app switched, network change).
+  socket.on("resume", ({ code, token }, cb) => {
+    const room = rooms[clean(code, 4).toUpperCase()];
+    const player = room && room.players.find((p) => p.id === clean(token, 60));
+    if (!player) return cb({ error: "Room expired." });
+    bind(room, player);
+    cb({});
+  });
+
+  socket.on("start", () => {
+    const room = myRoom();
+    if (!room || room.hostId !== socket.data.pid || room.phase !== "lobby" || room.players.length < MIN) return;
+    room.category = pick(Object.keys(WORDS));
+    room.word = pick(WORDS[room.category]);
+    room.imposter = pick(room.players).id;
+    room.order = shuffle(room.players.map((p) => p.id));
+    Object.assign(room, { t: 0, clues: [], votes: {}, result: null, phase: "clues" });
+    send(room);
+  });
+
+  socket.on("clue", (text) => {
+    const room = myRoom(), player = me();
+    text = clean(text, 40);
+    if (!room || !player || room.phase !== "clues" || !text) return;
+    if (room.order[room.t % room.order.length] !== player.id) return;
+    room.clues.push({ name: player.name, text, round: Math.floor(room.t / room.order.length) + 1 });
+    room.t++;
+    if (room.t >= room.order.length * ROUNDS) room.phase = "voting";
+    send(room);
+  });
+
+  socket.on("vote", (targetId) => {
+    const room = myRoom(), player = me();
+    if (!room || !player || room.phase !== "voting" || targetId === player.id) return;
+    if (!room.players.some((p) => p.id === targetId)) return;
+    room.votes[player.id] = targetId;
+    if (Object.keys(room.votes).length === room.players.length) finishVoting(room);
+    send(room);
+  });
+
+  socket.on("again", () => {
+    const room = myRoom();
+    if (room && room.hostId === socket.data.pid && room.phase === "result") backToLobby(room);
+  });
+
+  socket.on("chat", (text) => {
+    const room = myRoom(), player = me();
+    text = clean(text, 200);
+    if (!room || !player || !text) return;
+    const now = Date.now();
+    if (now - (player.lastChat || 0) < 700) return; // simple flood limit
+    player.lastChat = now;
+    room.chat.push({ name: player.name, text });
+    if (room.chat.length > 50) room.chat.shift();
+    send(room);
+  });
+
+  socket.on("leave", () => {
+    const room = myRoom(), player = me();
+    if (!room || !player) return;
+    socket.data.room = null;
+    removePlayer(room, player.id);
+  });
+
+  socket.on("disconnect", () => {
+    const room = myRoom(), player = me();
+    if (!room || !player || player.sid !== socket.id) return; // a newer connection already took over
+    player.sid = null;
+    player.online = false;
+    player.timer = setTimeout(() => removePlayer(room, player.id), HOLD_MS);
+    send(room);
+  });
 });
 
-function render(){
-  $("chat").hidden = !S;
-  if (S) renderChat();
-  if (!S) return show("home");
-  $("code1").textContent = $("code2").textContent = S.code;
-  if (S.phase === "lobby") return renderLobby();
-  show("game");
-  renderSecret();
-  $("clueform").hidden = !(S.phase === "clues" && S.turn === S.you.id);
-  $("votes").hidden = !(S.phase === "voting");
-  $("result").hidden = S.phase !== "result";
-  $("clueshead").hidden = !S.clues.length;
-
-  if (S.phase === "clues"){
-    $("status").textContent = S.turn === S.you.id ? "Your turn" : nameOf(S.turn) + "’s turn";
-    $("substatus").textContent = "Round " + S.round + " of " + S.rounds + ". " +
-      (S.you.imposter ? "Blend in without knowing the word." : "Hint at the word without saying it.");
-  } else if (S.phase === "voting"){
-    const me = S.players.find(p => p.id === S.you.id);
-    const count = S.players.filter(p => p.voted).length;
-    $("status").textContent = "Who’s the imposter?";
-    $("substatus").textContent = me.voted ? "Waiting for the others (" + count + " of " + S.players.length + " voted)." : "Pick one player.";
-    renderVotes(me.voted);
-  } else {
-    renderResult();
-  }
-
-  const off = S.players.filter(p => !p.online).map(p => p.name);
-  if (off.length && S.phase !== "result") $("substatus").textContent += " Waiting for " + off.join(", ") + " to reconnect.";
-
-  const ul = $("clues"); ul.replaceChildren();
-  S.clues.forEach(c => {
-    const li = el("li", null, "clue");
-    li.append(el("b", c.name), el("span", c.text));
-    ul.append(li);
-  });
-}
-
-function renderChat(){
-  const box = $("chatlist");
-  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-  box.replaceChildren();
-  if (!S.chat.length) box.append(el("li", "No messages yet.", "empty"));
-  S.chat.forEach(m => {
-    const li = el("li", null, m.name === nameOf(S.you.id) ? "me" : "");
-    li.append(el("b", m.name), el("span", m.text));
-    box.append(li);
-  });
-  if (stick) box.scrollTop = box.scrollHeight;
-}
-$("chatform").onsubmit = (e) => {
-  e.preventDefault();
-  const v = $("chatmsg").value.trim();
-  if (v) { socket.emit("chat", v); $("chatmsg").value = ""; }
-};
-
-function renderLobby(){
-  revealed = false;
-  show("lobby");
-  const ul = $("plist"); ul.replaceChildren();
-  S.players.forEach(p => {
-    const li = el("li", p.name);
-    if (!p.online) li.append(el("span", "reconnecting…", "tag"));
-    else if (p.id === S.hostId) li.append(el("span", "host", "tag"));
-    ul.append(li);
-  });
-  const host = S.you.id === S.hostId, enough = S.players.length >= S.min, allOnline = S.players.every(p => p.online);
-  $("start").hidden = !host;
-  $("start").disabled = !enough || !allOnline;
-  $("lobbyhint").textContent = host
-    ? (enough ? (allOnline ? "Everyone in? Start when ready." : "Waiting for a player to reconnect.") : "Waiting for at least " + S.min + " players. Share the room code.")
-    : "Waiting for the host to start. Share the room code with friends.";
-}
-
-function renderSecret(){
-  const b = $("secret"); b.replaceChildren();
-  b.className = "secret";
-  if (!revealed){
-    b.classList.add("hidden");
-    b.append(el("span", "Tap to see your word"), el("small", "Make sure nobody is looking"));
-  } else if (S.you.imposter){
-    b.classList.add("imp");
-    b.append(el("span", "You’re the imposter"), el("small", "Hint: the word is in the category “" + S.you.hint + "”. Tap to hide."));
-  } else {
-    b.append(el("span", S.you.word), el("small", "Tap to hide"));
-  }
-}
-
-function renderVotes(voted){
-  const box = $("votes"); box.replaceChildren();
-  if (voted) return;
-  S.players.filter(p => p.id !== S.you.id).forEach(p => {
-    const b = el("button", p.name, "alt");
-    b.onclick = () => socket.emit("vote", p.id);
-    box.append(b);
-  });
-}
-
-function renderResult(){
-  const r = S.result, box = $("result"); box.replaceChildren();
-  $("status").textContent = ""; $("substatus").textContent = "";
-  box.append(el("div", r.winner === "crew" ? "The crew wins" : "The imposter wins", "win " + r.winner));
-  box.append(el("p", (r.votedOut ? r.votedOut + " was voted out. " : "The vote was tied, so nobody was voted out. ") +
-    r.imposter + " was the imposter. The word was “" + r.word + "”."));
-  const ul = el("ul", null, "list");
-  r.tally.forEach(t => { const li = el("li", t.name); li.append(el("span", t.votes + (t.votes === 1 ? " vote" : " votes"), "tag")); ul.append(li); });
-  box.append(ul);
-  const again = el("button", S.you.id === S.hostId ? "Play again" : "Waiting for the host to start another round");
-  again.disabled = S.you.id !== S.hostId;
-  again.style.marginTop = "1rem";
-  again.onclick = () => socket.emit("again");
-  box.append(again);
-}
-
-render();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
-</script>
-</body>
-</html>
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log("Listening on " + PORT));
