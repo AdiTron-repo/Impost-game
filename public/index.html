@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Imposter Word Game</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0E2A2B">
+<link rel="icon" href="/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0E2A2B; --panel:#163B3D; --line:#2A5558; --paper:#F2F5F0;
+  --muted:#93B4B1; --signal:#FFC93C; --alert:#FF5A5F; --ok:#5BD6A0;
+  font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--ink);color:var(--paper);font-size:17px;line-height:1.45;
+  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:30rem;margin:0 auto;padding:1.25rem 1.25rem 3rem}
+h1{font-size:2.6rem;line-height:1;margin:1.5rem 0 .5rem;font-weight:800;letter-spacing:-.02em}
+h2{font-size:1.15rem;margin:1.75rem 0 .6rem;font-weight:700}
+p{margin:.25rem 0 1rem;color:var(--muted)}
+[hidden]{display:none!important}
+input,button{font:inherit;color:inherit}
+input{width:100%;padding:.8rem 1rem;border-radius:.6rem;border:2px solid var(--line);background:var(--panel);margin-bottom:.75rem}
+input:focus-visible,button:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+button{cursor:pointer;border:0;border-radius:.6rem;padding:.85rem 1.1rem;font-weight:700;background:var(--signal);color:var(--ink);width:100%;margin-bottom:.6rem}
+button.alt{background:transparent;border:2px solid var(--line);color:var(--paper)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:.6rem}.row input{margin:0}.row button{width:auto;margin:0}
+.top{display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
+.code{font-weight:800;font-size:1.5rem;letter-spacing:.25em;color:var(--signal)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:.65rem 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:1rem}
+.tag{color:var(--muted)}
+.secret{width:100%;min-height:9.5rem;border-radius:1rem;background:var(--paper);color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:1rem;margin:1rem 0;font-weight:800;font-size:2.6rem;line-height:1.05;letter-spacing:-.02em}
+.secret small{font-size:1rem;font-weight:500;color:#4d6b69;margin-top:.5rem;letter-spacing:0}
+.secret.hidden{background:var(--panel);color:var(--paper);border:2px dashed var(--line);font-size:1.5rem}
+.secret.hidden small{color:var(--muted)}
+.secret.imp{background:var(--alert);color:#fff}
+.secret.imp small{color:#ffe3e3}
+.status{font-weight:700;font-size:1.25rem;margin:1rem 0 .25rem}
+.clue b{color:var(--signal)}
+.votes button{text-align:left}
+.win{font-size:2rem;font-weight:800;line-height:1.1;margin:1rem 0 .5rem}
+.win.crew{color:var(--ok)}.win.imposter{color:var(--alert)}
+#toast{position:fixed;left:1rem;right:1rem;bottom:calc(1rem + env(safe-area-inset-bottom,0));max-width:28rem;margin:0 auto;
+  background:var(--paper);color:var(--ink);padding:.8rem 1rem;border-radius:.6rem;font-weight:700}
+@media (prefers-reduced-motion:no-preference){.secret{transition:background .2s,color .2s}}
+</style>
+</head>
+<body>
+<main>
+  <section id="home" class="view">
+    <h1>Who’s the imposter?</h1>
+    <p>Everyone gets the same secret word, except one player. Give clues, then vote.</p>
+    <label for="name" class="tag">Your name</label>
+    <input id="name" maxlength="12" autocomplete="off" placeholder="Up to 12 letters">
+    <button id="create">Create a room</button>
+    <h2>Or join a friend</h2>
+    <div class="row">
+      <input id="joincode" maxlength="4" autocomplete="off" placeholder="Room code" aria-label="Room code">
+      <button id="join" class="alt">Join</button>
+    </div>
+  </section>
+
+  <section id="lobby" class="view" hidden>
+    <div class="top"><span>Room code</span><span class="code" id="code1"></span></div>
+    <h2>Players</h2>
+    <ul class="list" id="plist"></ul>
+    <p id="lobbyhint"></p>
+    <button id="start">Start game</button>
+  </section>
+
+  <section id="game" class="view" hidden>
+    <div class="top"><span>Room</span><span class="code" id="code2"></span></div>
+    <button id="secret" class="secret hidden" aria-live="polite"></button>
+    <div class="status" id="status"></div>
+    <p id="substatus"></p>
+    <form id="clueform" hidden>
+      <input id="clue" maxlength="40" autocomplete="off" placeholder="Your clue (short!)" aria-label="Your clue">
+      <button type="submit">Send clue</button>
+    </form>
+    <div id="votes" class="votes" hidden></div>
+    <div id="result" hidden></div>
+    <h2 id="clueshead">Clues</h2>
+    <ul class="list" id="clues"></ul>
+  </section>
+</main>
+<div id="toast" role="status" hidden></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const $ = (id) => document.getElementById(id);
+let S = null, revealed = false, toastTimer;
+
+function show(id){ document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== id); }
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3500);
+}
+function el(tag, text, cls){
+  const e = document.createElement(tag);
+  if (text != null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+function nameOf(id){ const p = S.players.find(p => p.id === id); return p ? p.name : ""; }
+const done = (r) => { if (r && r.error) toast(r.error); };
+
+$("create").onclick = () => socket.emit("create", { name: $("name").value }, done);
+$("join").onclick = () => socket.emit("join", { name: $("name").value, code: $("joincode").value }, done);
+$("start").onclick = () => socket.emit("start");
+$("secret").onclick = () => { revealed = !revealed; render(); };
+$("clueform").onsubmit = (e) => {
+  e.preventDefault();
+  const v = $("clue").value.trim();
+  if (v) { socket.emit("clue", v); $("clue").value = ""; }
+};
+
+socket.on("state", (s) => { S = s; render(); });
+socket.on("notice", toast);
+socket.on("disconnect", () => { S = null; revealed = false; render(); toast("Connection lost. Create or join a room again."); });
+
+function render(){
+  if (!S) return show("home");
+  $("code1").textContent = $("code2").textContent = S.code;
+  if (S.phase === "lobby") return renderLobby();
+  show("game");
+  renderSecret();
+  $("clueform").hidden = !(S.phase === "clues" && S.turn === S.you.id);
+  $("votes").hidden = !(S.phase === "voting");
+  $("result").hidden = S.phase !== "result";
+  $("clueshead").hidden = !S.clues.length;
+
+  if (S.phase === "clues"){
+    $("status").textContent = S.turn === S.you.id ? "Your turn" : nameOf(S.turn) + "’s turn";
+    $("substatus").textContent = "Round " + S.round + " of " + S.rounds + ". " +
+      (S.you.imposter ? "Blend in without knowing the word." : "Hint at the word without saying it.");
+  } else if (S.phase === "voting"){
+    const me = S.players.find(p => p.id === S.you.id);
+    const count = S.players.filter(p => p.voted).length;
+    $("status").textContent = "Who’s the imposter?";
+    $("substatus").textContent = me.voted ? "Waiting for the others (" + count + " of " + S.players.length + " voted)." : "Pick one player.";
+    renderVotes(me.voted);
+  } else {
+    renderResult();
+  }
+
+  const ul = $("clues"); ul.replaceChildren();
+  S.clues.forEach(c => {
+    const li = el("li", null, "clue");
+    li.append(el("b", c.name), el("span", c.text));
+    ul.append(li);
+  });
+}
+
+function renderLobby(){
+  revealed = false;
+  show("lobby");
+  const ul = $("plist"); ul.replaceChildren();
+  S.players.forEach(p => {
+    const li = el("li", p.name);
+    if (p.id === S.hostId) li.append(el("span", "host", "tag"));
+    ul.append(li);
+  });
+  const host = S.you.id === S.hostId, enough = S.players.length >= S.min;
+  $("start").hidden = !host;
+  $("start").disabled = !enough;
+  $("lobbyhint").textContent = host
+    ? (enough ? "Everyone in? Start when ready." : "Waiting for at least " + S.min + " players. Share the room code.")
+    : "Waiting for the host to start. Share the room code with friends.";
+}
+
+function renderSecret(){
+  const b = $("secret"); b.replaceChildren();
+  b.className = "secret";
+  if (!revealed){
+    b.classList.add("hidden");
+    b.append(el("span", "Tap to see your word"), el("small", "Make sure nobody is looking"));
+  } else if (S.you.imposter){
+    b.classList.add("imp");
+    b.append(el("span", "You’re the imposter"), el("small", "You don’t know the word. Tap to hide."));
+  } else {
+    b.append(el("span", S.you.word), el("small", "Tap to hide"));
+  }
+}
+
+function renderVotes(voted){
+  const box = $("votes"); box.replaceChildren();
+  if (voted) return;
+  S.players.filter(p => p.id !== S.you.id).forEach(p => {
+    const b = el("button", p.name, "alt");
+    b.onclick = () => socket.emit("vote", p.id);
+    box.append(b);
+  });
+}
+
+function renderResult(){
+  const r = S.result, box = $("result"); box.replaceChildren();
+  $("status").textContent = ""; $("substatus").textContent = "";
+  box.append(el("div", r.winner === "crew" ? "The crew wins" : "The imposter wins", "win " + r.winner));
+  box.append(el("p", (r.votedOut ? r.votedOut + " was voted out. " : "The vote was tied, so nobody was voted out. ") +
+    r.imposter + " was the imposter. The word was “" + r.word + "”."));
+  const ul = el("ul", null, "list");
+  r.tally.forEach(t => { const li = el("li", t.name); li.append(el("span", t.votes + (t.votes === 1 ? " vote" : " votes"), "tag")); ul.append(li); });
+  box.append(ul);
+  const again = el("button", S.you.id === S.hostId ? "Play again" : "Waiting for the host to start another round");
+  again.disabled = S.you.id !== S.hostId;
+  again.style.marginTop = "1rem";
+  again.onclick = () => socket.emit("again");
+  box.append(again);
+}
+
+render();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+</script>
+</body>
+</html>
