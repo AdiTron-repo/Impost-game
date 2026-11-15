@@ -1,6 +1,6 @@
 {
-  "name": "Imposter Word Game",
-  "short_name": "Imposter",
+  "name": "Word Spy",
+  "short_name": "Word Spy",
   "description": "Give clues, find the imposter. A word game for 3 to 5 friends.",
   "start_url": "/",
   "scope": "/",
