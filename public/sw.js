@@ -1,5 +1,5 @@
 // Network first (so updates arrive), with a cached copy for offline use or a sleeping server.
-const CACHE = "imposter-v2";
+const CACHE = "wordspy-v1";
 const SHELL = ["/", "/words.js", "/manifest.json", "/icon-192.png", "/icon-512.png", "/socket.io/socket.io.js"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(SHELL.map((u) => c.add(u)))).then(() => self.skipWaiting()));
