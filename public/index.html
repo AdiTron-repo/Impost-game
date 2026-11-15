@@ -131,11 +131,40 @@ button:active:not(:disabled){transform:scale(.97)}
     <p>Everyone gets the same secret word, except one player. Give clues, then vote.</p>
     <label for="name" class="tag">Your name</label>
     <input id="name" maxlength="12" autocomplete="off" placeholder="Up to 12 letters">
-    <button id="create">Create a room</button>
+    <label class="tag"><input type="checkbox" id="pubbox" style="width:auto;margin:0 .5rem 0 0">Public room (anyone can join, no chat)</label>
+    <button id="create" style="margin-top:.6rem">Create a room</button>
+    <button id="goLocal" class="alt">Play on one device (works offline)</button>
+    <h2>Public rooms</h2>
+    <ul class="list" id="publist"><li class="tag">Looking for rooms…</li></ul>
+    <button id="quick" class="alt">Quick play</button>
     <h2>Or join a friend</h2>
     <div class="row">
       <input id="joincode" maxlength="4" autocomplete="off" placeholder="Room code" aria-label="Room code">
       <button id="join" class="alt">Join</button>
+    </div>
+  </section>
+
+  <section id="local" class="view" hidden>
+    <div id="l-setup">
+      <h2>Pass and play</h2>
+      <p>One device, no internet. Pass it around, then discuss out loud to find the imposter.</p>
+      <label class="tag" for="l-n">Players (3 to 10)</label>
+      <input id="l-n" type="number" min="3" max="10" value="4" inputmode="numeric">
+      <button id="l-go">Start</button><button id="l-back" class="alt">Back</button>
+    </div>
+    <div id="l-pass" hidden>
+      <div class="status" id="l-who"></div>
+      <button id="l-card" class="secret hidden"></button>
+      <button id="l-next" disabled>Done, pass it on</button>
+    </div>
+    <div id="l-talk" hidden>
+      <div class="status">Discuss!</div><p id="l-first"></p>
+      <div class="win" id="l-timer">3:00</div>
+      <button id="l-reveal">Reveal the imposter</button>
+    </div>
+    <div id="l-end" hidden>
+      <div class="win" id="l-res"></div><p id="l-info"></p>
+      <button id="l-again">Play again</button><button id="l-home" class="alt">Home</button>
     </div>
   </section>
 
@@ -173,9 +202,10 @@ button:active:not(:disabled){transform:scale(.97)}
 <div id="toast" role="status" hidden></div>
 <div id="conn" class="banner" role="status" hidden>Reconnecting…</div>
 
+<script src="/words.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket = io();
+const socket = typeof io === "function" ? io() : { connected: false, on(){}, emit(){}, connect(){}, disconnect(){} }; // still works offline
 function getToken(){
   let t = null;
   try { t = localStorage.getItem("imp_token"); } catch (e) {}
@@ -217,8 +247,8 @@ function el(tag, text, cls){
 function nameOf(id){ const p = S.players.find(p => p.id === id); return p ? p.name : ""; }
 const done = (r) => { if (r && r.error) toast(r.error); };
 
-$("create").onclick = () => socket.emit("create", { name: $("name").value, token: TOKEN }, done);
-$("join").onclick = () => socket.emit("join", { name: $("name").value, code: $("joincode").value, token: TOKEN }, done);
+$("create").onclick = () => online() && socket.emit("create", { name: $("name").value, token: TOKEN, public: $("pubbox").checked }, done);
+$("join").onclick = () => online() && socket.emit("join", { name: $("name").value, code: $("joincode").value, token: TOKEN }, done);
 $("start").onclick = () => socket.emit("start");
 function leaveRoom(){
   if (!confirm("Leave this room?")) return;
@@ -301,8 +331,79 @@ function hideBoot(){
 }
 socket.on("connect", hideBoot);
 setTimeout(() => { if (!socket.connected) $("bootmsg").textContent = "Waking up the server. This can take up to a minute."; }, 4000);
+setTimeout(() => { if (!socket.connected){ hideBoot(); toast("Can’t reach the server. Pass-and-play still works."); } }, navigator.onLine ? 12000 : 1500);
 
 let celebrated = false, seenClues = 0, seenChat = 0;
+const L = { active: false };
+const rnd = (a) => a[Math.floor(Math.random() * a.length)];
+// Stop reconnect attempts while offline; resume when the phone is back online or the player taps an online button.
+let failures = 0;
+function pauseRetries(){ if (socket.io) socket.io.reconnection(false); if (!socket.connected) socket.disconnect(); }
+function resumeRetries(){ failures = 0; if (socket.io) socket.io.reconnection(true); if (!socket.connected) socket.connect(); }
+window.addEventListener("offline", pauseRetries);
+window.addEventListener("online", resumeRetries);
+socket.on("connect", () => { failures = 0; });
+socket.on("connect_error", () => {
+  if (++failures >= 20){ pauseRetries(); toast("Can’t reach the server. Pass-and-play still works."); }
+});
+if (!navigator.onLine) pauseRetries();
+function online(){
+  if (socket.connected) return true;
+  resumeRetries();
+  toast("You’re offline or the server is waking up. Pass-and-play still works.");
+  return false;
+}
+
+// ---- public rooms ----
+function refreshList(){
+  if (S || L.active || !socket.connected) return;
+  socket.emit("list", (rooms) => {
+    const ul = $("publist"); ul.replaceChildren();
+    if (!rooms.length) return void ul.append(el("li", "No public rooms yet. Create one!", "tag"));
+    rooms.forEach((r) => {
+      const li = el("li", r.host + "’s room (" + r.count + "/" + r.max + ")");
+      const b = el("button", "Join"); b.style.cssText = "width:auto;margin:0;padding:.3rem .8rem";
+      b.onclick = () => online() && socket.emit("join", { name: $("name").value, code: r.code, token: TOKEN }, done);
+      li.append(b); ul.append(li);
+    });
+  });
+}
+setInterval(refreshList, 5000);
+socket.on("connect", refreshList);
+$("quick").onclick = () => online() && socket.emit("quick", { name: $("name").value, token: TOKEN }, done);
+socket.on("kicked", () => { S = null; revealed = false; saveRoom(null); render(); toast("The host removed you from the room."); });
+
+// ---- pass and play (works with no connection) ----
+function lshow(id){ ["l-setup", "l-pass", "l-talk", "l-end"].forEach((x) => $(x).hidden = x !== id); }
+$("goLocal").onclick = () => { L.active = true; show("local"); lshow("l-setup"); };
+$("l-back").onclick = $("l-home").onclick = () => { clearInterval(L.t); L.active = false; render(); };
+$("l-go").onclick = $("l-again").onclick = () => {
+  const n = Math.max(3, Math.min(10, parseInt($("l-n").value, 10) || 4));
+  L.n = n; L.cat = rnd(Object.keys(WORDS)); L.word = rnd(WORDS[L.cat]);
+  L.imp = Math.floor(Math.random() * n); L.i = 0; lpass();
+};
+function lpass(){ lshow("l-pass"); L.shown = false; $("l-who").textContent = "Player " + (L.i + 1); $("l-next").disabled = true; lcard(); }
+function lcard(){
+  const b = $("l-card"); b.replaceChildren(); b.className = "secret";
+  if (!L.shown){ b.classList.add("hidden"); b.append(el("span", "Player " + (L.i + 1) + ": tap to see your word"), el("small", "Make sure nobody else is looking")); }
+  else if (L.i === L.imp){ b.classList.add("imp"); b.append(el("span", "You’re the imposter"), el("small", "Hint: the word is in the category “" + L.cat + "”")); }
+  else b.append(el("span", L.word), el("small", "Remember it, then pass the device"));
+}
+$("l-card").onclick = () => { L.shown = !L.shown; lcard(); sfx("flip"); if (L.shown) $("l-next").disabled = false; };
+$("l-next").onclick = () => { L.i++; if (L.i < L.n) lpass(); else ltalk(); };
+function ltalk(){
+  lshow("l-talk");
+  $("l-first").textContent = "Player " + (1 + Math.floor(Math.random() * L.n)) + " speaks first. Everyone gives a clue, then argue it out.";
+  let s = 180; const t = $("l-timer");
+  const fmt = () => t.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  fmt(); clearInterval(L.t);
+  L.t = setInterval(() => { s--; fmt(); if (s <= 0){ clearInterval(L.t); sfx("vote"); } }, 1000);
+}
+$("l-reveal").onclick = () => {
+  clearInterval(L.t); lshow("l-end");
+  $("l-res").textContent = "Player " + (L.imp + 1) + " was the imposter";
+  $("l-info").textContent = "The word was “" + L.word + "”. Did you vote them out?"; sfx("win");
+};
 function celebrate(winner){
   if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const colors = winner === "crew" ? ["#5BD6A0", "#FFC93C", "#F2F5F0"] : ["#FF5A5F", "#FFC93C", "#F2F5F0"];
@@ -334,9 +435,9 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function render(){
-  $("chat").hidden = !S;
+  $("chat").hidden = !S || S.public;
   if (S) renderChat();
-  if (!S){ celebrated = false; seenClues = 0; seenChat = 0; return show("home"); }
+  if (!S){ celebrated = false; seenClues = 0; seenChat = 0; return show(L.active ? "local" : "home"); }
   $("code1").textContent = $("code2").textContent = S.code;
   if (S.phase === "lobby") return renderLobby();
   show("game");
@@ -400,6 +501,10 @@ function renderLobby(){
     const li = el("li", p.name);
     if (!p.online) li.append(el("span", "reconnecting…", "tag"));
     else if (p.id === S.hostId) li.append(el("span", "host", "tag"));
+    if (S.public && S.you.id === S.hostId && p.id !== S.you.id){
+      const k = el("button", "Kick", "alt"); k.style.cssText = "width:auto;margin:0;padding:.3rem .7rem";
+      k.onclick = () => socket.emit("kick", p.id); li.append(k);
+    }
     ul.append(li);
   });
   const host = S.you.id === S.hostId, enough = S.players.length >= S.min, allOnline = S.players.every(p => p.online);
