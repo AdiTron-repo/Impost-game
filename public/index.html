@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Imposter Word Game</title>
+<title>Word Spy</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0E2A2B">
 <link rel="icon" href="/icon-192.png">
@@ -118,30 +118,74 @@ button:active:not(:disabled){transform:scale(.97)}
   .bootdots i:nth-child(2){animation-delay:.15s}.bootdots i:nth-child(3){animation-delay:.3s}
   @keyframes dot{50%{transform:translateY(-.4rem);opacity:1}}
 }
+
+/* ---- cleaner layout and help ---- */
+main{padding-top:3.4rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:1rem;padding:1rem 1.1rem;margin:1rem 0}
+.card h2{margin:0 0 .25rem}
+.card p{margin:0 0 .8rem;font-size:.95rem}
+.steps{display:flex;gap:.4rem;margin:.6rem 0}
+.steps span{flex:1;text-align:center;padding:.35rem 0;border-radius:2rem;border:1px solid var(--line);color:var(--muted);font-size:.85rem}
+.steps span.on{background:var(--signal);color:var(--ink);border-color:var(--signal);font-weight:700}
+#helpBtn{position:fixed;top:calc(.6rem + env(safe-area-inset-top,0px));left:.6rem;width:auto;margin:0;padding:.4rem .8rem;z-index:15}
+.modal{position:fixed;inset:0;z-index:40;background:rgba(5,15,16,.78);display:flex;align-items:center;justify-content:center;padding:1.25rem}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:1rem;padding:1.25rem;max-width:26rem;width:100%;max-height:85vh;overflow:auto}
+.sheet h2{margin-top:0}.sheet ol{padding-left:1.2rem;margin:0 0 1rem}.sheet li{margin:.55rem 0}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:rise .3s ease both}}
+
+.mode{display:block;text-align:left;background:var(--panel);color:var(--paper);border:1px solid var(--line);padding:1.1rem 1.2rem;margin:.9rem 0;border-radius:1rem}
+.mode b{display:block;font-size:1.3rem;margin-bottom:.15rem}
+.mode span{color:var(--muted);font-weight:500;font-size:.95rem}
+.mode:hover:not(:disabled){border-color:var(--signal)}
+.homelogo{display:block;width:4.5rem;height:4.5rem;border-radius:22%;margin-top:.5rem}
+.homelogo + h1{margin-top:.8rem}
+.bootlogo{display:block;width:6rem;height:6rem;margin:0 auto 1rem;border-radius:22%}
+@media (prefers-reduced-motion:no-preference){.bootlogo{animation:bounce 1.1s ease-in-out infinite}}
 </style>
 </head>
 <body>
 <div class="bg" id="bg" aria-hidden="true"></div>
-<div id="boot" role="status"><div><div class="bootq">?</div><div class="boottitle">Imposter</div>
+<div id="boot" role="status"><div><img src="/icon-192.png" alt="" class="bootlogo" width="96" height="96"><div class="boottitle">Word Spy</div>
 <div class="bootdots"><i></i><i></i><i></i></div><p id="bootmsg">Connecting…</p></div></div>
 <button id="mute" class="alt" aria-label="Sound on or off"></button>
+<button id="helpBtn" class="alt" aria-label="How to play">? How to play</button>
+<div id="help" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="sheet"><h2 id="helpTitle"></h2><ol id="helpSteps"></ol><button id="helpOk">Got it</button></div>
+</div>
 <main>
   <section id="home" class="view">
-    <h1>Who’s the imposter?</h1>
-    <p>Everyone gets the same secret word, except one player. Give clues, then vote.</p>
+    <img src="/icon-192.png" alt="" class="homelogo" width="72" height="72">
+    <h1>Word Spy</h1>
+    <p>A word game for 3 to 5 players. Find the one who doesn’t know the secret word.</p>
+    <button class="mode" id="m-friends"><b>Play with friends</b><span>Create a room and share the code</span></button>
+    <button class="mode" id="m-public"><b>Public rooms</b><span>Join strangers or start an open room</span></button>
+    <button class="mode" id="goLocal"><b>Pass and play</b><span>One phone, no internet needed</span></button>
+  </section>
+
+  <section id="v-friends" class="view" hidden>
+    <h1>Play with friends</h1>
+    <p>Create a private room and share the code. Everyone plays on their own phone.</p>
     <label for="name" class="tag">Your name</label>
     <input id="name" maxlength="12" autocomplete="off" placeholder="Up to 12 letters">
-    <label class="tag"><input type="checkbox" id="pubbox" style="width:auto;margin:0 .5rem 0 0">Public room (anyone can join, no chat)</label>
-    <button id="create" style="margin-top:.6rem">Create a room</button>
-    <button id="goLocal" class="alt">Play on one device (works offline)</button>
-    <h2>Public rooms</h2>
-    <ul class="list" id="publist"><li class="tag">Looking for rooms…</li></ul>
-    <button id="quick" class="alt">Quick play</button>
-    <h2>Or join a friend</h2>
+    <button id="create">Create a room</button>
+    <h2>Have a code?</h2>
     <div class="row">
       <input id="joincode" maxlength="4" autocomplete="off" placeholder="Room code" aria-label="Room code">
       <button id="join" class="alt">Join</button>
     </div>
+    <button id="back1" class="alt" style="margin-top:1.5rem">Back</button>
+  </section>
+
+  <section id="v-public" class="view" hidden>
+    <h1>Public rooms</h1>
+    <p>Anyone can join these rooms. There is no chat, only clues.</p>
+    <label for="pname" class="tag">Your name</label>
+    <input id="pname" maxlength="12" autocomplete="off" placeholder="Up to 12 letters">
+    <button id="quick">Quick play</button>
+    <h2>Open rooms</h2>
+    <ul class="list" id="publist"><li class="tag">Looking for rooms…</li></ul>
+    <button id="createPub" class="alt" style="margin-top:.8rem">Start a public room</button>
+    <button id="back2" class="alt" style="margin-top:1.5rem">Back</button>
   </section>
 
   <section id="local" class="view" hidden>
@@ -173,11 +217,13 @@ button:active:not(:disabled){transform:scale(.97)}
     <h2>Players</h2>
     <ul class="list" id="plist"></ul>
     <p id="lobbyhint"></p>
+    <button id="share" class="alt">Share room code</button>
     <button id="start">Start game</button>
   </section>
 
   <section id="game" class="view" hidden>
     <div class="top"><span>Room</span><span class="code" id="code2"></span><button id="leave2" class="alt small">Leave</button></div>
+    <div class="steps" id="stepper"><span>1 Clues</span><span>2 Vote</span><span>3 Result</span></div>
     <button id="secret" class="secret hidden" aria-live="polite"></button>
     <div class="status" id="status"></div>
     <p id="substatus"></p>
@@ -247,7 +293,8 @@ function el(tag, text, cls){
 function nameOf(id){ const p = S.players.find(p => p.id === id); return p ? p.name : ""; }
 const done = (r) => { if (r && r.error) toast(r.error); };
 
-$("create").onclick = () => online() && socket.emit("create", { name: $("name").value, token: TOKEN, public: $("pubbox").checked }, done);
+$("create").onclick = () => online() && socket.emit("create", { name: $("name").value, token: TOKEN, public: false }, done);
+$("createPub").onclick = () => online() && socket.emit("create", { name: $("name").value, token: TOKEN, public: true }, done);
 $("join").onclick = () => online() && socket.emit("join", { name: $("name").value, code: $("joincode").value, token: TOKEN }, done);
 $("start").onclick = () => socket.emit("start");
 function leaveRoom(){
@@ -335,7 +382,42 @@ setTimeout(() => { if (!socket.connected){ hideBoot(); toast("Can’t reach the 
 
 let celebrated = false, seenClues = 0, seenChat = 0;
 const L = { active: false };
+let M = ""; // which mode menu is open: "", "v-friends" or "v-public"
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
+
+// ---- instructions shown the first time a player enters each mode (the ? button reopens them) ----
+const HELP = {
+  home: ["How to play", ["Everyone sees the same secret word, except one player: the imposter.", "Take turns giving a short clue about the word. Don’t say the word itself!", "The imposter only gets a category hint, so they must blend in.", "Vote for who you think the imposter is. Catch them and the crew wins. If not, the imposter wins."]],
+  online: ["Playing with friends", ["Share the room code. You need 3 to 5 players.", "The host taps Start. Tap your card to see your word.", "On your turn, send one short clue. Use the chat to discuss.", "After 2 rounds, everyone votes for the imposter."]],
+  public: ["Public room", ["Anyone can join. Wait for 3 to 5 players, then the host starts.", "Tap your card to see your word, then give one short clue on your turn.", "There is no chat here, so make your clues count.", "After 2 rounds, vote for the imposter. The host can remove players in the lobby."]],
+  local: ["Pass and play", ["Pass the device around. On your turn, tap the card, remember your word, then pass it on.", "The imposter only sees the category.", "When everyone has looked, talk out loud for 3 minutes and decide who the imposter is.", "Tap Reveal to see the answer."]],
+};
+let lastMode = "";
+const tipSeen = (k) => { try { return localStorage.getItem("help_" + k); } catch (e) { return "1"; } };
+const tipMark = (k) => { try { localStorage.setItem("help_" + k, "1"); } catch (e) {} };
+function helpKey(){ return L.active ? "local" : S ? (S.public ? "public" : "online") : M === "v-friends" ? "online" : M === "v-public" ? "public" : "home"; }
+function openHelp(k){
+  const h = HELP[k]; $("helpTitle").textContent = h[0];
+  const ol = $("helpSteps"); ol.replaceChildren(); h[1].forEach((x) => ol.append(el("li", x)));
+  $("help").hidden = false;
+}
+function checkHelp(){
+  const k = helpKey(); if (k === lastMode) return; lastMode = k;
+  if (!tipSeen(k)){ tipMark(k); openHelp(k); }
+}
+$("helpBtn").onclick = () => openHelp(helpKey());
+// ---- mode menus: the home screen only lists modes, everything else lives inside each mode ----
+$("m-friends").onclick = () => { M = "v-friends"; render(); };
+$("m-public").onclick = () => { M = "v-public"; render(); refreshList(); };
+$("back1").onclick = $("back2").onclick = () => { M = ""; render(); };
+$("name").oninput = () => { $("pname").value = $("name").value; };
+$("pname").oninput = () => { $("name").value = $("pname").value; };
+$("helpOk").onclick = () => { $("help").hidden = true; };
+$("share").onclick = async () => {
+  if (!S) return;
+  const t = "Join my Word Spy game! Room code: " + S.code;
+  try { if (navigator.share) await navigator.share({ text: t }); else { await navigator.clipboard.writeText(t); toast("Copied. Paste it in a chat."); } } catch (e) {}
+};
 // Stop reconnect attempts while offline; resume when the phone is back online or the player taps an online button.
 let failures = 0;
 function pauseRetries(){ if (socket.io) socket.io.reconnection(false); if (!socket.connected) socket.disconnect(); }
@@ -356,7 +438,7 @@ function online(){
 
 // ---- public rooms ----
 function refreshList(){
-  if (S || L.active || !socket.connected) return;
+  if (S || L.active || M !== "v-public" || !socket.connected) return;
   socket.emit("list", (rooms) => {
     const ul = $("publist"); ul.replaceChildren();
     if (!rooms.length) return void ul.append(el("li", "No public rooms yet. Create one!", "tag"));
@@ -375,7 +457,7 @@ socket.on("kicked", () => { S = null; revealed = false; saveRoom(null); render()
 
 // ---- pass and play (works with no connection) ----
 function lshow(id){ ["l-setup", "l-pass", "l-talk", "l-end"].forEach((x) => $(x).hidden = x !== id); }
-$("goLocal").onclick = () => { L.active = true; show("local"); lshow("l-setup"); };
+$("goLocal").onclick = () => { L.active = true; show("local"); lshow("l-setup"); checkHelp(); };
 $("l-back").onclick = $("l-home").onclick = () => { clearInterval(L.t); L.active = false; render(); };
 $("l-go").onclick = $("l-again").onclick = () => {
   const n = Math.max(3, Math.min(10, parseInt($("l-n").value, 10) || 4));
@@ -435,14 +517,16 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function render(){
+  checkHelp();
   $("chat").hidden = !S || S.public;
   if (S) renderChat();
-  if (!S){ celebrated = false; seenClues = 0; seenChat = 0; return show(L.active ? "local" : "home"); }
+  if (!S){ celebrated = false; seenClues = 0; seenChat = 0; return show(L.active ? "local" : (M || "home")); }
   $("code1").textContent = $("code2").textContent = S.code;
   if (S.phase === "lobby") return renderLobby();
   show("game");
   renderSecret();
   $("status").classList.toggle("yourturn", S.phase === "clues" && S.turn === S.you.id);
+  [...$("stepper").children].forEach((x, i) => x.classList.toggle("on", i === (S.phase === "clues" ? 0 : S.phase === "voting" ? 1 : 2)));
   $("clueform").hidden = !(S.phase === "clues" && S.turn === S.you.id);
   $("votes").hidden = !(S.phase === "voting");
   $("result").hidden = S.phase !== "result";
