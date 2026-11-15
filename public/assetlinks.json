@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "com.onrender.impost_game.twa",
-        "sha256_cert_fingerprints": ["FA:32:C8:03:B6:98:4F:57:3D:67:C5:0F:D3:EB:E4:EE:3B:5A:95:3C:81:DE:3A:57:87:4E:93:E2:AF:B8:07:D2"]
+        "sha256_cert_fingerprints": ["E0:7A:9F:5F:7E:37:1D:AF:E2:AB:DB:B9:EA:DC:3D:7E:09:34:23:28:23:1C:CE:3F:E9:CD:5F:30:CA:30:3D:BF"]
       }
     }]
