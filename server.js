@@ -15,16 +15,11 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
 });
 app.use(express.static(path.join(__dirname, "public")));
 
-const WORDS = {
-  Food: ["pizza", "chocolate", "sandwich", "biryani", "mango", "noodles"],
-  Animal: ["elephant", "tiger", "peacock", "dolphin", "camel", "penguin"],
-  Place: ["library", "airport", "castle", "hospital", "lighthouse", "stadium"],
-  Object: ["guitar", "umbrella", "mirror", "telescope", "backpack", "microphone"],
-  Vehicle: ["submarine", "bicycle", "helicopter", "train", "tractor", "rocket"],
-  Nature: ["volcano", "monsoon", "desert", "rainbow", "waterfall", "glacier"],
-  Sport: ["cricket", "football", "badminton", "chess", "swimming", "kabaddi"],
-  Event: ["wedding", "festival", "birthday", "concert", "exam", "picnic"],
-};
+const WORDS = require("./public/words.js");
+const BAD = ["fuck", "shit", "bitch", "cunt", "dick", "slut", "whore", "nigg", "fag", "rape"];
+const norm = (t) => String(t).toLowerCase().replace(/[^a-z]/g, "");
+const isBad = (t) => BAD.some((w) => norm(t).includes(w));
+const mask = (t) => (isBad(t) ? "***" : t);
 const MIN = 3, MAX = 5, ROUNDS = 2;
 const HOLD_MS = 90 * 1000; // how long a disconnected player keeps their seat
 const rooms = {};
@@ -49,6 +44,7 @@ function send(room) {
     code: room.code,
     phase: room.phase,
     hostId: room.hostId,
+    public: room.public,
     players: room.players.map((p) => ({ id: p.id, name: p.name, online: p.online, voted: p.id in room.votes })),
     turn: room.phase === "clues" ? room.order[room.t % n] : null,
     round: Math.min(Math.floor(room.t / n) + 1, ROUNDS),
@@ -127,22 +123,26 @@ io.on("connection", (socket) => {
     bind(room, player);
   }
 
-  socket.on("create", ({ name, token }, cb) => {
+  socket.on("create", ({ name, token, public: isPublic }, cb) => {
     name = clean(name, 12); const pid = clean(token, 60);
+    if (isBad(name)) return cb({ error: "Please choose a different name." });
     if (!name || !pid) return cb({ error: "Enter a name first." });
+    if (isPublic && Object.values(rooms).some((r) => r.public && r.hostId === pid)) return cb({ error: "You already host a public room." });
     const code = newCode();
-    rooms[code] = { code, hostId: pid, players: [], chat: [], phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null };
+    rooms[code] = { code, hostId: pid, public: !!isPublic, banned: [], players: [], chat: [], phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null };
     enter(rooms[code], name, pid);
     cb({});
   });
 
   socket.on("join", ({ name, code, token }, cb) => {
     name = clean(name, 12); const pid = clean(token, 60);
+    if (isBad(name)) return cb({ error: "Please choose a different name." });
     const room = rooms[clean(code, 4).toUpperCase()];
     if (!name || !pid) return cb({ error: "Enter a name first." });
     if (!room) return cb({ error: "No room with that code." });
     const existing = room.players.find((p) => p.id === pid);
     if (existing) { bind(room, existing); return cb({}); }
+    if ((room.banned || []).includes(pid)) return cb({ error: "You were removed from this room." });
     if (room.phase !== "lobby") return cb({ error: "That game has already started." });
     if (room.players.length >= MAX) return cb({ error: "That room is full." });
     if (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return cb({ error: "That name is taken in this room." });
@@ -172,7 +172,7 @@ io.on("connection", (socket) => {
 
   socket.on("clue", (text) => {
     const room = myRoom(), player = me();
-    text = clean(text, 40);
+    text = mask(clean(text, 40));
     if (!room || !player || room.phase !== "clues" || !text) return;
     if (room.order[room.t % room.order.length] !== player.id) return;
     room.clues.push({ name: player.name, text, round: Math.floor(room.t / room.order.length) + 1 });
@@ -197,14 +197,45 @@ io.on("connection", (socket) => {
 
   socket.on("chat", (text) => {
     const room = myRoom(), player = me();
-    text = clean(text, 200);
-    if (!room || !player || !text) return;
+    text = mask(clean(text, 200));
+    if (!room || !player || !text || room.public) return; // no free chat in public rooms
     const now = Date.now();
     if (now - (player.lastChat || 0) < 700) return; // simple flood limit
     player.lastChat = now;
     room.chat.push({ name: player.name, text });
     if (room.chat.length > 50) room.chat.shift();
     send(room);
+  });
+
+  socket.on("list", (cb) => {
+    if (typeof cb !== "function") return;
+    cb(Object.values(rooms).filter((r) => r.public && r.phase === "lobby" && r.players.length < MAX).slice(0, 20)
+      .map((r) => ({ code: r.code, host: (r.players.find((p) => p.id === r.hostId) || {}).name || "?", count: r.players.length, max: MAX })));
+  });
+
+  socket.on("quick", ({ name, token }, cb) => {
+    name = clean(name, 12); const pid = clean(token, 60);
+    if (!name || !pid) return cb({ error: "Enter a name first." });
+    if (isBad(name)) return cb({ error: "Please choose a different name." });
+    const open = Object.values(rooms)
+      .filter((r) => r.public && r.phase === "lobby" && r.players.length < MAX && !r.banned.includes(pid) &&
+        !r.players.some((p) => p.name.toLowerCase() === name.toLowerCase()))
+      .sort((x, y) => y.players.length - x.players.length)[0];
+    if (open) { enter(open, name, pid); return cb({}); }
+    const code = newCode();
+    rooms[code] = { code, hostId: pid, public: true, banned: [], players: [], chat: [], phase: "lobby", order: [], t: 0, clues: [], votes: {}, result: null };
+    enter(rooms[code], name, pid);
+    cb({});
+  });
+
+  socket.on("kick", (targetId) => {
+    const room = myRoom();
+    if (!room || !room.public || room.hostId !== socket.data.pid || room.phase !== "lobby" || targetId === room.hostId) return;
+    const t = room.players.find((p) => p.id === targetId);
+    if (!t) return;
+    room.banned.push(targetId);
+    if (t.sid) io.to(t.sid).emit("kicked");
+    removePlayer(room, targetId);
   });
 
   socket.on("leave", () => {
